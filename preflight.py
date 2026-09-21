@@ -1,12 +1,12 @@
 from pathlib import Path
-import os, sqlite3, shutil, json, hashlib, subprocess, time
+import os, sqlite3, shutil, json, hashlib, subprocess, time, sys
 
 os.umask(0o077)
-base = Path('/tmp/fianza-n8n-preflight-20260921')
+base = Path(os.environ['N8N_PREFLIGHT_DIRECTORY']).resolve()
 old = Path('/mnt/mydisk/n8nData/.n8n/.n8n')
 home = base / 'stage'
 data = home / '.n8n'
-data.mkdir(parents=True)
+data.mkdir(parents=True, exist_ok=True)
 
 def inventory(c):
     workflows = {}
@@ -16,15 +16,31 @@ def inventory(c):
     credentials = {k: hashlib.sha256(v.encode()).hexdigest() for k,v in c.execute('SELECT id,data FROM credentials_entity')}
     return dict(workflows=workflows,credentials=credentials,executions=c.execute('SELECT count(*) FROM execution_entity').fetchone()[0])
 
-with sqlite3.connect('file:'+str(old/'database.sqlite')+'?mode=ro',uri=True) as source:
-    with sqlite3.connect(data/'database.sqlite') as target:
-        source.backup(target,pages=2048,sleep=0.05)
-        assert target.execute('PRAGMA quick_check').fetchone()[0]=='ok'
-        before=inventory(target)
-shutil.copy2(old/'config',data/'config')
-(data/'config').chmod(0o600)
-(base/'inventory-before.json').write_text(json.dumps(before))
+if not (base/'inventory-before.json').exists():
+    assert not (data/'database.sqlite').exists(), 'Inspect partial preparation first'
+    raw = base/'uncompacted.sqlite'
+    assert not raw.exists(), 'Inspect partial preparation first'
+    assert shutil.disk_usage(base).free > 4_000_000_000, 'Insufficient safe preparation space'
+    with sqlite3.connect('file:'+str(old/'database.sqlite')+'?mode=ro',uri=True) as source:
+        with sqlite3.connect(raw) as target:
+            source.backup(target,pages=2048,sleep=0.05)
+            before=inventory(target)
+            target.execute('VACUUM INTO ?', (str(data/'database.sqlite'),))
+    with sqlite3.connect(data/'database.sqlite') as compact:
+        assert compact.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+        assert before==inventory(compact)
+    # Only the temporary uncompacted copy made above is removed after full verification.
+    assert raw.parent == base and raw.name == 'uncompacted.sqlite'
+    raw.unlink()
+    shutil.copy2(old/'config',data/'config')
+    (data/'config').chmod(0o600)
+    (base/'inventory-before.json').write_text(json.dumps(before))
+else:
+    before=json.loads((base/'inventory-before.json').read_text())
 print('CONSISTENT_COPY_READY',len(before['workflows']),len(before['credentials']),before['executions'],flush=True)
+if '--prepare-only' in sys.argv:
+    print('COMPACT_DATABASE_BYTES',(data/'database.sqlite').stat().st_size,flush=True)
+    sys.exit(0)
 env=os.environ.copy()
 env.update(PATH=str(base/'node-v24.21.0-linux-x64/bin')+':'+env['PATH'],
            NODE_OPTIONS='--max-old-space-size=512',N8N_USER_FOLDER=str(home),
