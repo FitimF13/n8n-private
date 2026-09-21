@@ -1,0 +1,49 @@
+from pathlib import Path
+import os, sqlite3, shutil, json, hashlib, subprocess, time
+
+os.umask(0o077)
+base = Path('/tmp/fianza-n8n-preflight-20260921')
+old = Path('/mnt/mydisk/n8nData/.n8n/.n8n')
+home = base / 'stage'
+data = home / '.n8n'
+data.mkdir(parents=True)
+
+def inventory(c):
+    workflows = {}
+    for ident, name, active, nodes, connections in c.execute('SELECT id,name,active,nodes,connections FROM workflow_entity'):
+        value = json.dumps([json.loads(nodes), json.loads(connections)],sort_keys=True)
+        workflows[ident] = [name, bool(active), hashlib.sha256(value.encode()).hexdigest()]
+    credentials = {k: hashlib.sha256(v.encode()).hexdigest() for k,v in c.execute('SELECT id,data FROM credentials_entity')}
+    return dict(workflows=workflows,credentials=credentials,executions=c.execute('SELECT count(*) FROM execution_entity').fetchone()[0])
+
+with sqlite3.connect('file:'+str(old/'database.sqlite')+'?mode=ro',uri=True) as source:
+    with sqlite3.connect(data/'database.sqlite') as target:
+        source.backup(target,pages=2048,sleep=0.05)
+        assert target.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+        before=inventory(target)
+shutil.copy2(old/'config',data/'config')
+(data/'config').chmod(0o600)
+(base/'inventory-before.json').write_text(json.dumps(before))
+print('CONSISTENT_COPY_READY',len(before['workflows']),len(before['credentials']),before['executions'],flush=True)
+env=os.environ.copy()
+env.update(PATH=str(base/'node-v24.21.0-linux-x64/bin')+':'+env['PATH'],
+           NODE_OPTIONS='--max-old-space-size=512',N8N_USER_FOLDER=str(home),
+           DB_SQLITE_DATABASE=str(data/'database.sqlite'),N8N_PORT='15678',
+           N8N_LISTEN_ADDRESS='127.0.0.1',N8N_HOST='localhost',N8N_PROTOCOL='http',
+           WEBHOOK_URL='http://127.0.0.1:15678',N8N_EDITOR_BASE_URL='http://127.0.0.1:15678',
+           N8N_DIAGNOSTICS_ENABLED='false',N8N_VERSION_NOTIFICATIONS_ENABLED='false',
+           N8N_LICENSE_AUTO_RENEW_ENABLED='false',N8N_TEMPLATES_ENABLED='false')
+cli=str(base/'runtime/node_modules/.bin/n8n')
+result=subprocess.run([cli,'export:workflow','--all','--output='+str(base/'workflows-after.json')],env=env)
+assert result.returncode==0,'Migration command failed'
+with sqlite3.connect('file:'+str(data/'database.sqlite')+'?mode=ro',uri=True) as c:
+    after=inventory(c)
+    print('DATABASE_CHECK',c.execute('PRAGMA quick_check').fetchone()[0],flush=True)
+    print('COUNTS_AFTER',len(after['workflows']),len(after['credentials']),after['executions'],flush=True)
+    print('DEFINITION_AND_CREDENTIAL_MATCH',before==after,flush=True)
+    print('DATABASE_SIZE', (data/'database.sqlite').stat().st_size,flush=True)
+    print('PUBLISHED',c.execute('SELECT count(*) FROM workflow_entity WHERE activeVersionId IS NOT NULL').fetchone()[0],flush=True)
+(base/'inventory-after.json').write_text(json.dumps(after))
+assert before==after,'Inventory changed during migration'
+(base/'preflight.ok').write_text(str(time.time()))
+print('PREFLIGHT_MIGRATION_PASSED',flush=True)
