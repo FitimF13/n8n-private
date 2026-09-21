@@ -14,7 +14,8 @@ def inventory(c):
         value = json.dumps([json.loads(nodes), json.loads(connections)],sort_keys=True)
         workflows[ident] = [name, bool(active), hashlib.sha256(value.encode()).hexdigest()]
     credentials = {k: hashlib.sha256(v.encode()).hexdigest() for k,v in c.execute('SELECT id,data FROM credentials_entity')}
-    return dict(workflows=workflows,credentials=credentials,executions=c.execute('SELECT count(*) FROM execution_entity').fetchone()[0])
+    ownership={t:c.execute('SELECT count(*) FROM "'+t+'"').fetchone()[0] for t in ['shared_workflow','shared_credentials','user','workflow_statistics']}
+    return dict(workflows=workflows,credentials=credentials,ownership=ownership,executions=c.execute('SELECT count(*) FROM execution_entity').fetchone()[0])
 
 if not (base/'inventory-before.json').exists():
     assert not (data/'database.sqlite').exists(), 'Inspect partial preparation first'
@@ -37,6 +38,12 @@ if not (base/'inventory-before.json').exists():
     (base/'inventory-before.json').write_text(json.dumps(before))
 else:
     before=json.loads((base/'inventory-before.json').read_text())
+    if 'ownership' not in before:
+        with sqlite3.connect('file:'+str(data/'database.sqlite')+'?mode=ro',uri=True) as current:
+            initial=inventory(current)
+            assert {k:v for k,v in initial.items() if k!='ownership'}==before
+            before=initial
+        (base/'inventory-before.json').write_text(json.dumps(before))
 print('CONSISTENT_COPY_READY',len(before['workflows']),len(before['credentials']),before['executions'],flush=True)
 if '--prepare-only' in sys.argv:
     print('COMPACT_DATABASE_BYTES',(data/'database.sqlite').stat().st_size,flush=True)
