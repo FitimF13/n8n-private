@@ -1,0 +1,8 @@
+{
+  "name": "fianza-n8n-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": "24.21.0" },
+  "scripts": { "start": "python3 launch.py" },
+  "dependencies": { "n8n": "2.39.10" }
+}
