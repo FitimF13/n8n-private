@@ -32,7 +32,9 @@ def inventory(connection):
         workflows[ident] = {'name': name, 'active': bool(active),
                            'definition': hashlib.sha256(content.encode()).hexdigest()}
     credentials = dict(connection.execute('SELECT id,data FROM credentials_entity'))
-    return {'workflows': workflows,
+    ownership = {name: connection.execute('SELECT count(*) FROM "' + name + '"').fetchone()[0]
+                 for name in ('shared_workflow', 'shared_credentials', 'user', 'workflow_statistics')}
+    return {'workflows': workflows, 'ownership': ownership,
             'credentials': {key: hashlib.sha256(value.encode()).hexdigest()
                             for key, value in credentials.items()},
             'execution_count': connection.execute('SELECT count(*) FROM execution_entity').fetchone()[0]}
@@ -69,15 +71,24 @@ env['N8N_USER_FOLDER'] = str(runtime_home)
 env['DB_SQLITE_DATABASE'] = str(data / 'database.sqlite')
 env['N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS'] = 'true'
 env['NODE_OPTIONS'] = '--max-old-space-size=1024'
-executable = root / 'node_modules/.bin/n8n'
+executable = root / 'node_modules/n8n/bin/n8n'
+bridge = root / 'node_modules/n8n-upgrade-bridge/bin/n8n'
 
 if not verified.exists():
+    before = json.loads(marker.read_text())['before']
+    with (runtime_home / 'bridge-migration.log').open('w') as log:
+        result = subprocess.run([str(bridge), 'export:workflow', '--all',
+                                 '--output=' + str(runtime_home / 'bridge-workflows.json')],
+                                env=env, stdout=log, stderr=subprocess.STDOUT)
+    assert result.returncode == 0, '1.x bridge migration failed; legacy database unchanged'
+    with connect_readonly(data / 'database.sqlite') as connection:
+        assert inventory(connection) == before, '1.x bridge inventory mismatch; refusing next migration'
+    print('Official 1.x bridge verified; migrating to 2.39.10.', flush=True)
     with (runtime_home / 'migration.log').open('w') as log:
         result = subprocess.run([str(executable), 'export:workflow', '--all',
                                  '--output=' + str(runtime_home / 'workflow-verification.json')],
                                 env=env, stdout=log, stderr=subprocess.STDOUT)
     assert result.returncode == 0, 'Migration failed; see protected migration.log; legacy database unchanged'
-    before = json.loads(marker.read_text())['before']
     with connect_readonly(data / 'database.sqlite') as connection:
         assert connection.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
         after = inventory(connection)

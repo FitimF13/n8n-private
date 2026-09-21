@@ -9,11 +9,13 @@
     "start": "python3 launch.py"
   },
   "dependencies": {
-    "n8n": "2.39.10"
+    "n8n": "2.39.10",
+    "n8n-upgrade-bridge": "npm:n8n@1.123.81"
   },
   "allowScripts": {
     "sqlite3@5.1.7": true,
     "isolated-vm@7.0.1": true,
+    "isolated-vm@6.2.0": true,
     "msgpackr-extract@3.0.4": true,
     "ssh2@1.15.0": true,
     "ssh2@1.17.0": true,
@@ -23,6 +25,8 @@
     "@sentry/node-cpu-profiler@2.4.4": true,
     "@sentry/node-native-stacktrace@0.5.2": true,
     "oracledb@6.10.0": true,
+    "oracledb@6.9.0": true,
+    "@sentry-internal/node-native-stacktrace@0.2.3": true,
     "@confluentinc/kafka-javascript@1.9.1": true,
     "@scarf/scarf": false,
     "agent-browser": false
