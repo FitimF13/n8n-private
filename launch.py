@@ -49,6 +49,11 @@ if not marker.exists():
             source.backup(target, pages=2048, sleep=0.05)
             assert target.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
             before = inventory(target)
+            target.execute('VACUUM INTO ?', (str(data / 'database.compact.sqlite'),))
+    with connect_readonly(data / 'database.compact.sqlite') as compact:
+        assert compact.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+        assert inventory(compact) == before, 'Compacted copy does not match'
+    os.replace(data / 'database.compact.sqlite', data / 'database.sqlite')
     for name in ('config', 'binaryData', 'git', 'ssh'):
         source = legacy / name
         if source.is_dir():
