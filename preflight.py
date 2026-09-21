@@ -68,7 +68,9 @@ with sqlite3.connect('file:'+str(data/'database.sqlite')+'?mode=ro',uri=True) as
     print('COUNTS_AFTER',len(after['workflows']),len(after['credentials']),after['executions'],flush=True)
     print('DEFINITION_AND_CREDENTIAL_MATCH',before==after,flush=True)
     print('DATABASE_SIZE', (data/'database.sqlite').stat().st_size,flush=True)
-    print('PUBLISHED',c.execute('SELECT count(*) FROM workflow_entity WHERE activeVersionId IS NOT NULL').fetchone()[0],flush=True)
+    columns={r[1] for r in c.execute('PRAGMA table_info(workflow_entity)')}
+    if 'activeVersionId' in columns:
+        print('PUBLISHED',c.execute('SELECT count(*) FROM workflow_entity WHERE activeVersionId IS NOT NULL').fetchone()[0],flush=True)
 (base/'inventory-after.json').write_text(json.dumps(after))
 assert before==after,'Inventory changed during migration'
 (base/'preflight.ok').write_text(str(time.time()))
