@@ -2,7 +2,29 @@
   "name": "fianza-n8n-runtime",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": "24.21.0" },
-  "scripts": { "start": "python3 launch.py" },
-  "dependencies": { "n8n": "2.39.10" }
+  "engines": {
+    "node": "24.21.0"
+  },
+  "scripts": {
+    "start": "python3 launch.py"
+  },
+  "dependencies": {
+    "n8n": "2.39.10"
+  },
+  "allowScripts": {
+    "sqlite3@5.1.7": true,
+    "isolated-vm@7.0.1": true,
+    "msgpackr-extract@3.0.4": true,
+    "ssh2@1.15.0": true,
+    "ssh2@1.17.0": true,
+    "protobufjs@7.6.6": true,
+    "vue-demi@0.14.10": true,
+    "@parcel/watcher@2.6.0": true,
+    "@sentry/node-cpu-profiler@2.4.4": true,
+    "@sentry/node-native-stacktrace@0.5.2": true,
+    "oracledb@6.10.0": true,
+    "@confluentinc/kafka-javascript@1.9.1": true,
+    "@scarf/scarf": false,
+    "agent-browser": false
+  }
 }
