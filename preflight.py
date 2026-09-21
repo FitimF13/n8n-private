@@ -50,8 +50,18 @@ env.update(PATH=str(base/'node-v24.21.0-linux-x64/bin')+':'+env['PATH'],
            N8N_DIAGNOSTICS_ENABLED='false',N8N_VERSION_NOTIFICATIONS_ENABLED='false',
            N8N_LICENSE_AUTO_RENEW_ENABLED='false',N8N_TEMPLATES_ENABLED='false')
 cli=str(base/'runtime/node_modules/.bin/n8n')
-result=subprocess.run([cli,'export:workflow','--all','--output='+str(base/'workflows-after.json')],env=env)
-assert result.returncode==0,'Migration command failed'
+process=subprocess.Popen([cli,'export:workflow','--all','--output='+str(base/'workflows-after.json')],env=env)
+while process.poll() is None:
+    if shutil.disk_usage(base).free < 1_000_000_000:
+        process.terminate()
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        raise RuntimeError('Preflight stopped to preserve at least 1 GB for production')
+    time.sleep(1)
+assert process.returncode==0,'Migration command failed'
 with sqlite3.connect('file:'+str(data/'database.sqlite')+'?mode=ro',uri=True) as c:
     after=inventory(c)
     print('DATABASE_CHECK',c.execute('PRAGMA quick_check').fetchone()[0],flush=True)
